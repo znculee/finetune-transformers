@@ -71,6 +71,7 @@ def train(args):
     logger.info(f'total parameters: {num_total_params}')
 
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer.zero_grad()
     logger.info(f'optimizer\n{optimizer}')
 
     train_num_batchs_per_epoch = math.ceil(len(train_dataset) / args.batch_size)
@@ -112,8 +113,6 @@ def train(args):
 
             src_input_ids, src_attn_mask, tgt_input_ids, tgt_attn_mask = (x.to(DEVICE) for x in data)
 
-            optimizer.zero_grad()
-
             labels = shift_target_inputs_to_labels(tgt_input_ids, train_dataset.tokenizer.pad_token_id)
 
             output = model(
@@ -127,11 +126,15 @@ def train(args):
             loss = output[0]
             train_epoch_sum_loss += loss * src_input_ids.shape[0]
 
-            loss.backward()
-            optimizer.step()
+            normalized_loss = loss / args.update_frequency
+            normalized_loss.backward()
 
             global_step += 1
             train_progress.update(itr+1, step=global_step, loss=loss)
+
+            if (itr + 1) % args.update_frequency == 0:
+                optimizer.step()
+                optimizer.zero_grad()
 
         train_progress.finish()
 
@@ -231,6 +234,7 @@ def parse_args():
     parser.add_argument('--max-epoch', type=int, default=1)
     parser.add_argument('--patience', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--update-frequency', type=int, default=1)
     parser.add_argument('--learning-rate', type=float, default=0.001)
 
     parser.add_argument('--valid-batch-size', type=int, default=8)
