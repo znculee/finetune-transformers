@@ -34,20 +34,21 @@ def generate(args):
     model.to(DEVICE)
     model.eval()
 
-    num_batches = math.ceil(len(test_dataset) / args.batch_size)
-    widgets = [
-        progressbar.Percentage(), ' | ',
-        progressbar.SimpleProgress(), ' ',
-        progressbar.Bar('▇'), ' ',
-        progressbar.Timer(), ' | ',
-        progressbar.ETA()
-    ]
+    if not args.debug:
+        num_batches = math.ceil(len(test_dataset) / args.batch_size)
+        widgets = [
+            progressbar.Percentage(), ' | ',
+            progressbar.SimpleProgress(), ' ',
+            progressbar.Bar('▇'), ' ',
+            progressbar.Timer(), ' | ',
+            progressbar.ETA()
+        ]
 
-    progress = progressbar.ProgressBar(
-        max_value=num_batches,
-        widgets=widgets,
-        redirect_stdout=True
-    ).start()
+        progress = progressbar.ProgressBar(
+            max_value=num_batches,
+            widgets=widgets,
+            redirect_stdout=True
+        ).start()
 
     output_file = open(args.output_path, 'w')
 
@@ -87,9 +88,11 @@ def generate(args):
                 )
                 output_file.write(seq_toks + '\n')
 
-        progress.update(itr+1)
+        if not args.debug:
+            progress.update(itr+1)
 
-    progress.finish()
+    if not args.debug:
+        progress.finish()
 
     output_file.close()
 
@@ -105,6 +108,7 @@ def parse_args():
     parser.add_argument('--num-return-sequences', type=int, default=1)
     parser.add_argument('--max-length', type=int, default=200)
     parser.add_argument('--score-reference', action='store_true')
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
     return args
 

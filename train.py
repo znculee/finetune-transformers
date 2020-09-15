@@ -74,24 +74,25 @@ def train(args):
     optimizer.zero_grad()
     logger.info(f'optimizer\n{optimizer}')
 
-    train_num_batchs_per_epoch = math.ceil(len(train_dataset) / args.batch_size)
-    train_progress_widgets = [
-        progressbar.Percentage(), ' | ',
-        progressbar.SimpleProgress(), ' | ',
-        progressbar.Variable('step', width=0), ' | ',
-        progressbar.Variable('loss', width=0, precision=6), ' ',
-        progressbar.Bar('▇'), ' ',
-        progressbar.Timer(), ' | ',
-        progressbar.ETA()
-    ]
-    valid_num_batchs_per_epoch = math.ceil(len(valid_dataset) / args.valid_batch_size)
-    valid_progress_widgets = [
-        progressbar.Percentage(), ' | ',
-        progressbar.SimpleProgress(), ' ',
-        progressbar.Bar('▇'), ' ',
-        progressbar.Timer(), ' | ',
-        progressbar.ETA()
-    ]
+    if not args.debug:
+        train_num_batchs_per_epoch = math.ceil(len(train_dataset) / args.batch_size)
+        train_progress_widgets = [
+            progressbar.Percentage(), ' | ',
+            progressbar.SimpleProgress(), ' | ',
+            progressbar.Variable('step', width=0), ' | ',
+            progressbar.Variable('loss', width=0, precision=6), ' ',
+            progressbar.Bar('▇'), ' ',
+            progressbar.Timer(), ' | ',
+            progressbar.ETA()
+        ]
+        valid_num_batchs_per_epoch = math.ceil(len(valid_dataset) / args.valid_batch_size)
+        valid_progress_widgets = [
+            progressbar.Percentage(), ' | ',
+            progressbar.SimpleProgress(), ' ',
+            progressbar.Bar('▇'), ' ',
+            progressbar.Timer(), ' | ',
+            progressbar.ETA()
+        ]
 
     global_step = 1
     best_valid_measure = math.inf
@@ -103,11 +104,12 @@ def train(args):
         train_epoch_average_loss = 0
 
         logger.info(f'begin training epoch {epoch_itr+1}')
-        train_progress = progressbar.ProgressBar(
-            max_value=train_num_batchs_per_epoch,
-            widgets=train_progress_widgets,
-            redirect_stdout=True
-        ).start()
+        if not args.debug:
+            train_progress = progressbar.ProgressBar(
+                max_value=train_num_batchs_per_epoch,
+                widgets=train_progress_widgets,
+                redirect_stdout=True
+            ).start()
 
         for itr, data in enumerate(train_dataloader):
 
@@ -130,13 +132,15 @@ def train(args):
             normalized_loss.backward()
 
             global_step += 1
-            train_progress.update(itr+1, step=global_step, loss=loss)
+            if not args.debug:
+                train_progress.update(itr+1, step=global_step, loss=loss)
 
             if (itr + 1) % args.update_frequency == 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
-        train_progress.finish()
+        if not args.debug:
+            train_progress.finish()
 
         train_epoch_average_loss = train_epoch_sum_loss.item() / len(train_dataset)
         logger.info(f'average training loss: {train_epoch_average_loss}')
@@ -144,11 +148,12 @@ def train(args):
         logger.info(f'begin validation for epoch {epoch_itr+1}')
         model.eval()
 
-        valid_progress = progressbar.ProgressBar(
-            max_value=valid_num_batchs_per_epoch,
-            widgets=valid_progress_widgets,
-            redirect_stdout=True
-        ).start()
+        if not args.debug:
+            valid_progress = progressbar.ProgressBar(
+                max_value=valid_num_batchs_per_epoch,
+                widgets=valid_progress_widgets,
+                redirect_stdout=True
+            ).start()
 
         valid_measure = 0
         if args.valid_bleu:
@@ -196,10 +201,12 @@ def train(args):
                 valid_loss = output[0]
                 valid_epoch_sum_loss += valid_loss * src_input_ids.shape[0]
 
-            valid_progress.update(itr+1)
+            if not args.debug:
+                valid_progress.update(itr+1)
 
         model.train()
-        valid_progress.finish()
+        if not args.debug:
+            valid_progress.finish()
 
         if args.valid_bleu:
             bleu = sacrebleu.corpus_bleu(hypotheses, [references], force=True)
@@ -241,6 +248,9 @@ def parse_args():
     parser.add_argument('--valid-bleu', action='store_true')
     parser.add_argument('--valid-beam-size', type=int, default=5)
     parser.add_argument('--valid-max-length', type=int, default=200)
+
+    parser.add_argument('--debug', action='store_true')
+
     args = parser.parse_args()
     return args
 
