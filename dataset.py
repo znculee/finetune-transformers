@@ -26,14 +26,21 @@ class Seq2SeqDataset(Dataset):
         else:
             self.target = None
 
+        self._add_indivisible_tokens(indivisible_tokens_path)
+        self.vocab_size = self._get_vocab_size()
+
+        if save_tokenizer:
+            self.tokenizer.save_pretrained(save_tokenizer)
+
+    def _add_indivisible_tokens(self, indivisible_tokens_path):
         if indivisible_tokens_path is not None:
             logger.info('adding indivisible tokens to the vocabulary')
             with open(indivisible_tokens_path, 'r') as f:
                 indivisible_tokens = [l.strip() for l in f.readlines()]
-                self.tokenizer.add_tokens(indivisible_tokens)
+            self.tokenizer.add_tokens(indivisible_tokens)
 
-        if save_tokenizer:
-            self.tokenizer.save_pretrained(save_tokenizer)
+    def _get_vocab_size(self):
+        return len(self.tokenizer)
 
     def __len__(self):
         if self.target:
@@ -107,7 +114,6 @@ class Seq2SeqDataset(Dataset):
 
         return collated_data
 
-
     def get_dataloader(self, batch_size, shuffle):
         return DataLoader(
             self,
@@ -115,3 +121,74 @@ class Seq2SeqDataset(Dataset):
             shuffle=shuffle,
             collate_fn=self._collate_fn
         )
+
+
+class MBartSeq2SeqDataset(Seq2SeqDataset):
+
+    def __init__(self, src_lang='en_XX', tgt_lang='en_XX', **kwargs):
+        super().__init__(**kwargs)
+        self.src_lang = src_lang
+        self.tgt_lang = tgt_lang
+
+    def _add_indivisible_tokens(self, indivisible_tokens_path):
+        if indivisible_tokens_path is not None:
+            logger.info('adding indivisible tokens to the vocabulary')
+            with open(indivisible_tokens_path, 'r') as f:
+                indivisible_tokens = [l.strip() for l in f.readlines()]
+            vocab_size = self._get_vocab_size()
+            indivisible_tok_to_id = {tok: vocab_size + i for i, tok in enumerate(indivisible_tokens)}
+            self.tokenizer.fairseq_tokens_to_ids.update(indivisible_tok_to_id)
+            self.tokenizer.fairseq_ids_to_tokens = {v: k for k, v in self.tokenizer.fairseq_tokens_to_ids.items()}
+            self.tokenizer._additional_special_tokens.extend(indivisible_tokens)
+            self.tokenizer.unique_no_split_tokens.extend(indivisible_tokens)
+
+    def _get_vocab_size(self):
+        return max(self.tokenizer.fairseq_ids_to_tokens.keys()) + 1
+
+    def _collate_fn(self, data):
+        source_list = []
+        if self.target:
+            target_list = []
+        for item in data:
+            if self.target:
+                source, target = item
+            else:
+                source = item
+            source_list.append(source.strip())
+            if self.target:
+                target_list.append(target.strip())
+
+        self.tokenizer.cur_lang_code = self.tokenizer.lang_code_to_id[self.src_lang]
+        self.tokenizer.prefix_tokens = []
+        self.tokenizer.suffix_tokens = [self.tokenizer.eos_token_id, self.tokenizer.cur_lang_code]
+        source_batch = self.tokenizer(
+            source_list,
+            add_special_tokens=True,
+            padding=True,
+            return_tensors='pt'
+        )
+        if self.target:
+            self.tokenizer.cur_lang_code = self.tokenizer.lang_code_to_id[self.tgt_lang]
+            self.tokenizer.prefix_tokens = [self.tokenizer.cur_lang_code]
+            self.tokenizer.suffix_tokens = [self.tokenizer.eos_token_id]
+            target_batch = self.tokenizer(
+                target_list,
+                add_special_tokens=True,
+                padding=True,
+                return_tensors='pt'
+            )
+
+        if self.target:
+            collated_data = (
+                source_batch['input_ids'],
+                source_batch['attention_mask'],
+                target_batch['input_ids'],
+                target_batch['attention_mask']
+            )
+        else:
+            collated_data = (
+                source_batch['input_ids'],
+                source_batch['attention_mask']
+            )
+
+        return collated_data

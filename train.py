@@ -7,7 +7,6 @@ import sacrebleu
 import torch
 import torch.optim as optim
 
-from dataset import Seq2SeqDataset
 from register import register
 
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -41,9 +40,9 @@ def train(args):
     logfile.setFormatter(fmt)
     logger.addHandler(logfile)
 
-    model_class, tokenizer_class = register(args.pretrained_model_path)
+    model_class, tokenizer_class, dataset_class = register(args.pretrained_model_path)
 
-    train_dataset = Seq2SeqDataset(
+    train_dataset = dataset_class(
         tokenizer_class=tokenizer_class,
         tokenizer_path=args.pretrained_model_path,
         source_data_path=args.train_source_data_path,
@@ -53,7 +52,7 @@ def train(args):
         save_tokenizer=args.save_dir
     )
     train_dataloader = train_dataset.get_dataloader(batch_size=args.batch_size, shuffle=True)
-    valid_dataset = Seq2SeqDataset(
+    valid_dataset = dataset_class(
         tokenizer_class=tokenizer_class,
         tokenizer_path=args.save_dir,
         source_data_path=args.valid_source_data_path,
@@ -61,9 +60,13 @@ def train(args):
     )
     valid_dataloader = valid_dataset.get_dataloader(batch_size=args.valid_batch_size, shuffle=False)
 
+    if args.src_lang is not None and args.tgt_lang is not None:
+        src_lang_id = train_dataset.tokenizer.lang_code_to_id[args.src_lang]
+        tgt_lang_id = train_dataset.tokenizer.lang_code_to_id[args.tgt_lang]
+
     model = model_class.from_pretrained(args.pretrained_model_path, cache_dir=args.cache_dir)
     if args.indivisible_tokens_path is not None:
-        model.resize_token_embeddings(len(train_dataset.tokenizer))
+        model.resize_token_embeddings(train_dataset.vocab_size)
     model.to(DEVICE)
     model.train()
     logger.info(f'model\n{model}')
@@ -171,6 +174,7 @@ def train(args):
                     tgt_output_ids = model.generate(
                         src_input_ids,
                         attention_mask=src_attn_mask,
+                        decoder_start_token_id = tgt_lang_id,
                         num_beams=args.valid_beam_size,
                         max_length=args.valid_max_length
                     )
@@ -178,14 +182,14 @@ def train(args):
                     seq_toks = valid_dataset.tokenizer.decode(
                         seq_ids,
                         skip_special_tokens=True,
-                        clean_up_tokenization_spaces=False
+                        clean_up_tokenization_spaces=True
                     )
                     hypotheses.append(seq_toks)
                 for seq_ids in tgt_input_ids.to('cpu').numpy().tolist():
                     seq_toks = valid_dataset.tokenizer.decode(
                         seq_ids,
                         skip_special_tokens=True,
-                        clean_up_tokenization_spaces=False
+                        clean_up_tokenization_spaces=True
                     )
                     references.append(seq_toks)
             else:
@@ -248,6 +252,9 @@ def parse_args():
     parser.add_argument('--valid-bleu', action='store_true')
     parser.add_argument('--valid-beam-size', type=int, default=5)
     parser.add_argument('--valid-max-length', type=int, default=200)
+
+    parser.add_argument('--src-lang', type=str, default=None)
+    parser.add_argument('--tgt-lang', type=str, default=None)
 
     parser.add_argument('--debug', action='store_true')
 
