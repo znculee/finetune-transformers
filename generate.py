@@ -84,7 +84,7 @@ def generate(args):
                 seq_toks = test_dataset.tokenizer.decode(
                     seq_ids,
                     skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False
+                    clean_up_tokenization_spaces=args.clean_up_tokenization_spaces
                 )
                 output_file.write(seq_toks + '\n')
 
@@ -106,6 +106,7 @@ def parse_args():
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--beam-size', type=int, default=5)
     parser.add_argument('--num-return-sequences', type=int, default=1)
+    parser.add_argument('--clean-up-tokenization-spaces', action='store_true')
     parser.add_argument('--max-length', type=int, default=200)
     parser.add_argument('--score-reference', action='store_true')
     parser.add_argument('--debug', action='store_true')
